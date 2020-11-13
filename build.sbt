@@ -1,4 +1,4 @@
-name := "gene-book"
+name := "genebook"
 
 version := "0.1"
 
