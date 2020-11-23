@@ -3,6 +3,8 @@ package genebook
 import cats.data.State
 import cats.implicits._
 
+import scala.util.Try
+
 object RNG {
   type Seed = Long
 
@@ -22,11 +24,11 @@ object RNG {
   def nonNegative: State[Seed, Int] =
     int.map { a => (if (a == Int.MinValue) a + 1 else a).abs }
 
-  def nonNegative(n: Int): State[Seed, Int] =
+  def nonNegative(max: Int): State[Seed, Int] =
     nonNegative.flatMap { a =>
-      val mod = a % n
-      if (a + n - mod >= 0) State.pure(mod)
-      else nonNegative(n)
+      val mod = if (0 == max) 0 else a % max
+      if (a + max - mod >= 0) State.pure(mod)
+      else nonNegative(max)
     }
 
   def int(max: Int, min: Int = 0): State[Seed, Int] =
@@ -42,14 +44,17 @@ object RNG {
   def lessThan(lessThan: Int, min: Int = 0): State[Seed, Int] =
     int(if (lessThan - 1 <= min) lessThan else lessThan - 1, min)
 
-  def item[T](list: List[T]): State[Seed, Option[T]] =
-    lessThan(list.length).map(list.get(_))
-
-  def foo[T](list: List[T]): State[(Seed, List[T]), Option[T]] =
+  def randItem[T](iterable: Iterable[T]): State[Seed, Option[T]] =
     for {
-      index <- lessThan(list.length)
-      s <- State.get
-      _ <- State.set(s) // todo: what is going on?
-    } yield list.get(index)
+      index <- RNG.lessThan(iterable.size)
+    } yield Try(iterable.toIndexedSeq(index)).toOption
 
+  def popRandomItemFromSet[T]: State[(Seed, Set[T]), Option[T]] =
+    for {
+      s <- State.get
+      item <- RNG.randItem(s._2)
+        .transformS[(Seed, Set[T])](_._1, (newS, seed) => (seed, newS._2))
+      changeSet = (a: Set[T]) => if (item.isEmpty) a else a.excl(item.get)
+      _ <- State.modify[(Seed, Set[T])](s => (s._1, changeSet(s._2)))
+    } yield item
 }
